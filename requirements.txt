@@ -1,0 +1,10 @@
+streamlit==1.49.1
+
+langchain==0.2.17
+langchain-core==0.2.43
+langchain-community==0.2.19
+langchain-groq==0.1.10
+
+sqlalchemy==2.0.43
+mysql-connector-python==9.4.0
+groq==0.31.0
