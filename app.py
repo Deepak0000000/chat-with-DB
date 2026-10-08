@@ -12,9 +12,10 @@ from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_community.agent_toolkits.sql.base import create_sql_agent
 
-# --------------------------------------------------
-# Streamlit Page
-# --------------------------------------------------
+
+# ==================================================
+# Streamlit Page Configuration
+# ==================================================
 
 st.set_page_config(
     page_title="LangChain: Chat with SQL Database",
@@ -23,12 +24,18 @@ st.set_page_config(
 
 st.title("🦜 LangChain: Chat with SQL Database")
 
+
+# ==================================================
+# Database Constants
+# ==================================================
+
 LOCALDB = "LOCALDB"
 MYSQL = "MYSQL"
 
-# --------------------------------------------------
+
+# ==================================================
 # Sidebar
-# --------------------------------------------------
+# ==================================================
 
 db_choice = st.sidebar.radio(
     "Choose Database",
@@ -38,7 +45,13 @@ db_choice = st.sidebar.radio(
     ),
 )
 
+
+# ==================================================
+# MySQL Configuration
+# ==================================================
+
 if db_choice == "Connect to MySQL Database":
+
     db_uri = MYSQL
 
     mysql_host = st.sidebar.text_input(
@@ -67,7 +80,13 @@ if db_choice == "Connect to MySQL Database":
     )
 
 else:
+
     db_uri = LOCALDB
+
+
+# ==================================================
+# Groq API Key
+# ==================================================
 
 api_key = st.sidebar.text_input(
     "Groq API Key",
@@ -75,26 +94,34 @@ api_key = st.sidebar.text_input(
 )
 
 if not api_key:
+
     st.info("Please enter your Groq API Key.")
+
     st.stop()
 
-# --------------------------------------------------
+
+# ==================================================
 # LLM
-# --------------------------------------------------
+# ==================================================
 
 llm = ChatGroq(
     api_key=api_key,
-    model="llama-3.3-70b-versatile",
+    model="openai/gpt-oss-20b",
     temperature=0,
     streaming=True,
 )
 
-# --------------------------------------------------
+
+# ==================================================
 # Configure Database
-# --------------------------------------------------
+# ==================================================
 
 @st.cache_resource
 def configure_db():
+
+    # --------------------------------------------------
+    # SQLite
+    # --------------------------------------------------
 
     if db_uri == LOCALDB:
 
@@ -112,6 +139,10 @@ def configure_db():
 
         return SQLDatabase(engine)
 
+    # --------------------------------------------------
+    # MySQL
+    # --------------------------------------------------
+
     else:
 
         connection_url = URL.create(
@@ -125,70 +156,105 @@ def configure_db():
 
         engine = create_engine(connection_url)
 
-        # Test Connection
+        # Test MySQL connection
         with engine.connect():
             pass
 
         return SQLDatabase(engine)
 
-# --------------------------------------------------
+
+# ==================================================
 # Database Connection
-# --------------------------------------------------
+# ==================================================
 
 try:
+
     db = configure_db()
+
     st.sidebar.success("✅ Database Connected")
 
 except Exception as e:
-    st.error(f"Database Connection Error\n\n{e}")
+
+    st.error(
+        f"Database Connection Error\n\n{e}"
+    )
+
     st.stop()
 
-# --------------------------------------------------
-# Toolkit
-# --------------------------------------------------
+
+# ==================================================
+# SQL Toolkit
+# ==================================================
 
 toolkit = SQLDatabaseToolkit(
     db=db,
     llm=llm,
 )
 
+# ==================================================
+# SQL Agent
+# ==================================================
+
 agent = create_sql_agent(
     llm=llm,
     toolkit=toolkit,
-    agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+    agent_type="tool-calling",
     verbose=True,
     max_iterations=5,
-    early_stopping_method="generate",
-    handle_parsing_errors=True,
 )
 
-# --------------------------------------------------
+
+# ==================================================
 # Chat History
-# --------------------------------------------------
+# ==================================================
 
 if (
     "messages" not in st.session_state
     or st.sidebar.button("Clear Chat")
 ):
+
     st.session_state.messages = [
         {
             "role": "assistant",
-            "content": "Hello 👋 Ask me anything about your SQL database.",
+            "content": (
+                "Hello 👋 Ask me anything "
+                "about your SQL database."
+            ),
         }
     ]
 
-for message in st.session_state.messages:
-    st.chat_message(message["role"]).write(message["content"])
 
-# --------------------------------------------------
+# ==================================================
+# Display Chat History
+# ==================================================
+
+for message in st.session_state.messages:
+
+    st.chat_message(
+        message["role"]
+    ).write(
+        message["content"]
+    )
+
+
+# ==================================================
 # Chat Input
-# --------------------------------------------------
+# ==================================================
 
 user_query = st.chat_input(
     "Ask a question..."
 )
 
+
+# ==================================================
+# Process User Question
+# ==================================================
+
 if user_query:
+
+    # --------------------------------------------------
+    # Save User Message
+    # --------------------------------------------------
 
     st.session_state.messages.append(
         {
@@ -197,7 +263,16 @@ if user_query:
         }
     )
 
-    st.chat_message("user").write(user_query)
+    st.chat_message(
+        "user"
+    ).write(
+        user_query
+    )
+
+
+    # --------------------------------------------------
+    # Assistant Response
+    # --------------------------------------------------
 
     with st.chat_message("assistant"):
 
@@ -206,34 +281,63 @@ if user_query:
             expand_new_thoughts=False,
         )
 
+
+        # --------------------------------------------------
+        # Prompt
+        # --------------------------------------------------
+
         prompt = f"""
 You are an expert SQL assistant.
 
-Rules:
+Follow these rules carefully:
 
-1. Always inspect the schema first.
-2. Use only SQL.
-3. Never invent tables.
-4. Return only the final answer.
-5. If the user asks to show all records, execute
+1. First inspect the database schema.
+2. Use the available SQL database tools to answer the question.
+3. Never invent tables or columns.
+4. Generate SQL based only on the actual database schema.
+5. Execute the SQL query before giving the final answer.
+6. Do not guess the answer.
+7. Return a clear and concise final answer.
 
-SELECT * FROM STUDENT;
-
-Question:
+User Question:
 
 {user_query}
 """
 
+
+        # --------------------------------------------------
+        # Invoke Agent
+        # --------------------------------------------------
+
         try:
 
             response = agent.invoke(
-                {"input": prompt},
-                callbacks=[callback],
+                {
+                    "input": prompt
+                },
+                config={
+                    "callbacks": [callback]
+                },
             )
+
+
+            # --------------------------------------------------
+            # Get Final Answer
+            # --------------------------------------------------
 
             answer = response["output"]
 
+
+            # --------------------------------------------------
+            # Display Answer
+            # --------------------------------------------------
+
             st.write(answer)
+
+
+            # --------------------------------------------------
+            # Save Assistant Message
+            # --------------------------------------------------
 
             st.session_state.messages.append(
                 {
@@ -242,5 +346,9 @@ Question:
                 }
             )
 
+
         except Exception as e:
-            st.error(e)
+
+            st.error(
+                f"Error while processing your question:\n\n{e}"
+            )
